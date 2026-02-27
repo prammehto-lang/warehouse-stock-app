@@ -1,0 +1,147 @@
+:root {
+  --primary: #1976D2;
+  --primary-dark: #115293;
+  --accent: #FF4081;
+  --bg: #F4F6F8;
+  --surface: #FFFFFF;
+  --text: #333333;
+  --text-light: #757575;
+  --error: #D32F2F;
+  --success: #388E3C;
+  --warning: #F57C00;
+  --divider: #E0E0E0;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: 'Roboto', sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+}
+
+/* Typography */
+h1, h2, h3 { font-weight: 500; }
+a { text-decoration: none; }
+
+/* Utilities */
+.active { display: block !important; }
+.screen { display: none; padding-top: 64px; }
+.container { padding: 16px; max-width: 600px; margin: 0 auto; }
+.divider { border-top: 1px solid var(--divider); margin-top: 16px; padding-top: 16px; }
+
+/* App Bar */
+.app-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 64px;
+  background-color: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  z-index: 1000;
+}
+.app-bar .app-title { flex: 1; font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; }
+.app-bar .icon-btn { color: white; background: none; border: none; outline: none; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.app-bar .icon-btn:active { background: rgba(255,255,255,0.2); }
+.user-info { font-size: 14px; opacity: 0.9; margin-right: 8px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; justify-content: center; align-items: center;
+  border: none; border-radius: 4px; padding: 10px 16px;
+  font-size: 14px; font-weight: 500; text-transform: uppercase;
+  cursor: pointer; transition: background 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 2px rgba(0,0,0,0.15);
+  font-family: inherit; width: 100%;
+  gap: 8px;
+}
+.btn-large { padding: 14px 16px; font-size: 16px; }
+.btn-primary { background-color: var(--primary); color: white; }
+.btn-primary:active { background-color: var(--primary-dark); }
+.btn-secondary { background-color: var(--surface); color: var(--primary); border: 1px solid var(--primary); }
+.btn-accent { background-color: var(--accent); color: white; }
+.btn-danger { background-color: var(--error); color: white; }
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+  margin-bottom: 16px;
+}
+
+/* Forms */
+.input-group { margin-bottom: 16px; }
+.input-group label { display: block; font-size: 12px; color: var(--text-light); margin-bottom: 4px; font-weight: 500; }
+.input-group input {
+  width: 100%; padding: 12px; border: 1px solid var(--divider);
+  border-radius: 4px; font-size: 16px; font-family: inherit; background: var(--bg);
+  transition: border 0.3s;
+}
+.input-group input:focus { border-color: var(--primary); outline: none; background: var(--surface); }
+
+/* Login */
+.login-container { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; padding-top: 0; }
+.login-container .brand { text-align: center; margin-bottom: 32px; color: var(--primary); }
+.brand-icon { font-size: 64px; }
+.login-container .card { width: 100%; max-width: 400px; }
+.login-hint { margin-top: 16px; text-align: center; color: var(--text-light); }
+
+/* Search Box */
+.search-box { display: flex; align-items: center; padding: 8px 16px; }
+.search-box input { flex: 1; border: none; outline: none; font-size: 16px; padding: 8px; }
+.search-icon { color: var(--text-light); }
+
+/* List */
+.results-list { display: flex; flex-direction: column; gap: 8px; }
+.list-item {
+  background: var(--surface); padding: 16px; border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1); display: flex; justify-content: space-between;
+  align-items: center; cursor: pointer; border-left: 4px solid var(--primary);
+}
+.list-item:active { background: #f0f0f0; }
+.item-primary { font-weight: 500; font-size: 16px; margin-bottom: 4px; }
+.item-secondary { font-size: 14px; color: var(--text-light); }
+
+/* Item Details */
+.detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.badge { background: var(--primary); color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; }
+.badge.warn { background: var(--warning); }
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; background: var(--bg); padding: 12px; border-radius: 8px; }
+.stat-box { text-align: center; display: flex; flex-direction: column; }
+.stat-label { font-size: 11px; color: var(--text-light); text-transform: uppercase; margin-bottom: 4px; }
+.stat-value { font-size: 20px; font-weight: 700; color: var(--text); }
+.highlight .stat-value { color: var(--primary); }
+.diff-positive .stat-value { color: var(--success); }
+.diff-negative .stat-value { color: var(--error); }
+
+.section-title { font-size: 14px; text-transform: uppercase; color: var(--text-light); font-weight: 500; margin: 24px 0 8px 0; padding: 0 4px; }
+.history-item { display: flex; justify-content: space-between; border-left-color: var(--accent); }
+.history-item .loc { font-weight: bold; }
+.history-item .qty { background: var(--accent); color: white; padding: 4px 12px; border-radius: 16px; font-weight: bold; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: -60px; left: 50%; transform: translateX(-50%);
+  background: #323232; color: white; padding: 14px 24px; border-radius: 24px;
+  font-size: 14px; box-shadow: 0 3px 5px rgba(0,0,0,0.2); transition: bottom 0.3s;
+  z-index: 2000; pointer-events: none; white-space: nowrap;
+}
+.toast.show { bottom: 24px; }
+
+/* Not Found */
+.not-found-action { text-align: center; padding: 32px 16px; }
+.not-found-action p { margin-bottom: 16px; color: var(--text-light); font-size: 16px; }
+
+/* Helper Text */
+.helper-text { display: block; margin-top: 8px; font-size: 12px; color: var(--text-light); line-height: 1.4; text-align: center; }

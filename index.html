@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Warehouse Stock Count</title>
+
+  <!-- Web App Manifest for Android PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1976D2">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+
+  <!-- Fonts & Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+  <!-- PapaParse for CSV handling -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+  <!-- Firebase SDK (Compat Version for Vanilla JS) -->
+  <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <!-- Snackbar / Toast for Notifications -->
+  <div id="toast" class="toast">Message saved</div>
+
+  <!-- App Header -->
+  <header class="app-bar" id="app-bar" style="display: none;">
+    <button class="icon-btn" id="btn-back" style="display: none;"><i class="material-icons">arrow_back</i></button>
+    <h1 class="app-title" id="app-title">Stock Count</h1>
+    <div class="user-info" id="header-user-info"></div>
+    <button class="icon-btn" id="btn-logout"><i class="material-icons">logout</i></button>
+  </header>
+
+  <!-- SCREEN: LOGIN -->
+  <main id="screen-login" class="screen active">
+    <div class="login-container">
+      <div class="brand">
+        <i class="material-icons brand-icon">inventory_2</i>
+        <h2>Warehouse App</h2>
+      </div>
+      <form id="form-login" class="card">
+        <div class="input-group">
+          <label for="login-id">User ID</label>
+          <input type="text" id="login-id" required placeholder="Enter your ID (e.g., admin or user1)">
+        </div>
+        <div class="input-group">
+          <label for="login-pass">Password</label>
+          <input type="password" id="login-pass" required placeholder="Enter password">
+        </div>
+        <button type="submit" class="btn btn-primary btn-large">LOGIN</button>
+      </form>
+      <div class="login-hint">
+        <small>Demo Accounts:<br>Admin => ID: <b>admin</b>, Pass: <b>123</b><br>User => ID: <b>user1</b>, Pass:
+          <b>123</b></small>
+      </div>
+    </div>
+  </main>
+
+  <!-- SCREEN: ADMIN DASHBOARD -->
+  <main id="screen-admin" class="screen">
+    <div class="container card">
+      <h3>Admin Dashboard</h3>
+      <p>Manage system stock and reports.</p>
+
+      <div class="action-section">
+        <label class="btn btn-secondary btn-large file-upload-btn">
+          <i class="material-icons">upload_file</i> UPLOAD STOCK CSV
+          <input type="file" id="file-upload" accept=".csv, .xlsx, .xls" style="display: none;">
+        </label>
+        <small class="helper-text">Columns: Stock Date, Item Code, Item Description, System Stock Qty</small>
+      </div>
+
+      <div class="action-section divider">
+        <button id="btn-generate-report" class="btn btn-primary btn-large">
+          <i class="material-icons">analytics</i> GENERATE FINAL REPORT
+        </button>
+      </div>
+
+      <div class="action-section divider">
+        <button id="btn-clear-db" class="btn btn-danger btn-large">
+          <i class="material-icons">delete_forever</i> WIPE ALL DATA
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- SCREEN: USER DASHBOARD (Search) -->
+  <main id="screen-user" class="screen">
+    <div class="container">
+      <div class="search-box card">
+        <i class="material-icons search-icon">search</i>
+        <input type="text" id="search-input" placeholder="Search by Item Code..." autocomplete="off">
+        <button id="btn-clear-search" class="icon-btn"><i class="material-icons">close</i></button>
+      </div>
+
+      <div id="search-results" class="results-list">
+        <!-- Search results will populate here -->
+      </div>
+
+      <div class="not-found-action" id="not-found-action" style="display:none;">
+        <p>Item not found in system stock.</p>
+        <button id="btn-goto-add" class="btn btn-accent btn-large">
+          <i class="material-icons">add_box</i> ADD NEW ITEM
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- SCREEN: STOCK COUNT DETAIL -->
+  <main id="screen-count" class="screen">
+    <div class="container">
+      <div class="card detail-card">
+        <div class="detail-header">
+          <h2 id="detail-item-code">ITEM-001</h2>
+          <span class="badge" id="detail-status">In System</span>
+        </div>
+        <p id="detail-item-desc" class="item-desc">Item Description Goes Here</p>
+
+        <div class="stats-grid">
+          <div class="stat-box">
+            <span class="stat-label">System Qty</span>
+            <strong id="detail-sys-qty" class="stat-value">0</strong>
+          </div>
+          <div class="stat-box highlight">
+            <span class="stat-label">Physical Qty</span>
+            <strong id="detail-phys-qty" class="stat-value">0</strong>
+          </div>
+          <div class="stat-box" id="detail-diff-box">
+            <span class="stat-label">Difference</span>
+            <strong id="detail-diff-qty" class="stat-value">0</strong>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="section-title">Add Count Entry</h3>
+      <form id="form-add-count" class="card">
+        <div class="input-group">
+          <label for="count-location">Location (Bin/Rack)</label>
+          <input type="text" id="count-location" required placeholder="e.g. A1-Rack2" autocomplete="off">
+        </div>
+        <div class="input-group">
+          <label for="count-qty">Quantity Found</label>
+          <input type="number" id="count-qty" required min="0" placeholder="0" autocomplete="off">
+        </div>
+        <button type="submit" class="btn btn-primary btn-large">SAVE COUNT</button>
+      </form>
+
+      <h3 class="section-title">Count History for Item</h3>
+      <div id="count-history-list" class="results-list history-list">
+        <!-- History items populate here -->
+      </div>
+    </div>
+  </main>
+
+  <!-- SCREEN: ADD NEW ITEM (Not in System) -->
+  <main id="screen-add-item" class="screen">
+    <div class="container">
+      <div class="card">
+        <h3>Add Unlisted Item</h3>
+        <p>Record stock for an item not in the system file.</p>
+        <form id="form-new-item">
+          <div class="input-group">
+            <label for="new-item-code">Item Code</label>
+            <input type="text" id="new-item-code" required placeholder="Enter specific Item Code" autocomplete="off">
+          </div>
+          <div class="input-group">
+            <label for="new-item-desc">Item Description (Optional)</label>
+            <input type="text" id="new-item-desc" placeholder="Describe the item" autocomplete="off">
+          </div>
+          <div class="input-group">
+            <label for="new-item-loc">Location</label>
+            <input type="text" id="new-item-loc" required placeholder="e.g. C3-Rack1" autocomplete="off">
+          </div>
+          <div class="input-group">
+            <label for="new-item-qty">Quantity Found</label>
+            <input type="number" id="new-item-qty" required min="0" placeholder="0" autocomplete="off">
+          </div>
+          <button type="submit" class="btn btn-accent btn-large">SAVE NEW ITEM</button>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+
+</html>

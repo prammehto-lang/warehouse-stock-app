@@ -1,0 +1,497 @@
+// app.js - Core application logic
+
+// --- Firebase Configuration ---
+// REPLACE THESE PLACEHOLDERS WITH YOUR ACTUAL FIREBASE CONFIG
+const firebaseConfig = {
+  apiKey: "AIzaSyBy9A21IJUv8qVKUD91KHanj1CSkVdKJvU",
+  authDomain: "warehouse-stock-app-b9e92.firebaseapp.com",
+  projectId: "warehouse-stock-app-b9e92",
+  storageBucket: "warehouse-stock-app-b9e92.firebasestorage.app",
+  messagingSenderId: "699350588129",
+  appId: "1:699350588129:web:3d4bc2f5b126f29233f5a0",
+  measurementId: "G-XN0YDYE40Q"
+};
+
+// Initialize Firebase
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
+const db = firebase.firestore();
+
+// Enable offline persistence
+db.enablePersistence()
+  .catch((err) => {
+    if (err.code == 'failed-precondition') {
+      console.warn("Multiple tabs open, persistence can only be enabled in one tab at a a time.");
+    } else if (err.code == 'unimplemented') {
+      console.warn("The current browser does not support all of the features required to enable persistence.");
+    }
+  });
+
+
+// State Management
+const STATE = {
+  currentUser: null,
+  currentScreen: 'screen-login',
+  selectedItem: null // Currently viewing item
+};
+
+// --- Service Worker Registration ---
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .then(registration => {
+        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+      }, err => {
+        console.log('ServiceWorker registration failed: ', err);
+      });
+  });
+}
+
+function clearAllData() {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Deleting a collection from a Web client is NOT recommended by Firebase 
+      // because it has negative performance and security implications.
+      // However, for this admin function, we manually fetch and delete all documents.
+      const sysQuery = await db.collection('systemStock').get();
+      const cntQuery = await db.collection('countedStock').get();
+
+      const batch = db.batch();
+      sysQuery.docs.forEach(doc => batch.delete(doc.ref));
+      cntQuery.docs.forEach(doc => batch.delete(doc.ref));
+
+      await batch.commit();
+      resolve();
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+// System Stock Utilities
+async function addSystemStockList(items) {
+  try {
+    // Note: In a real app with 10k+ items, you should batch these writes 
+    // or use a backend function. For this demo, we do individual sets.
+    const batch = db.batch();
+
+    // First, clear existing (Optional, depends on business logic if upload replaces or appends)
+    const existing = await db.collection('systemStock').get();
+    existing.docs.forEach(doc => batch.delete(doc.ref));
+
+    // Commit delete
+    await batch.commit();
+
+    // Create new batch for adding
+    const addBatch = db.batch();
+    items.forEach(item => {
+      const itemCode = (item['Item Code'] || '').toString().trim();
+      if (itemCode) {
+        const docRef = db.collection('systemStock').doc(itemCode);
+        addBatch.set(docRef, {
+          stockDate: item['Stock Date'] || '',
+          itemCode: itemCode,
+          itemDesc: item['Item Description'] || '',
+          sysQty: parseFloat(item['System Stock Qty']) || 0
+        });
+      }
+    });
+    await addBatch.commit();
+  } catch (e) {
+    throw e;
+  }
+}
+
+async function searchSystemStock(query) {
+  const q = query.toLowerCase();
+  // Firestore doesn't have great native text search for substring (e.g. LIKE "%query%").
+  // So we fetch all and filter client-side for this small-scale app.
+  const snapshot = await db.collection('systemStock').get();
+  const results = [];
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    if (data.itemCode.toLowerCase().includes(q) || data.itemDesc.toLowerCase().includes(q)) {
+      results.push(data);
+    }
+  });
+  return results;
+}
+
+async function getSystemItem(itemCode) {
+  const doc = await db.collection('systemStock').doc(itemCode).get();
+  if (doc.exists) {
+    return doc.data();
+  }
+  return null;
+}
+
+// Counted Stock Utilities
+async function addCountEntry(itemCode, location, qty, addedBy, isNewSystemItem = false, itemDesc = '') {
+  try {
+    const entry = {
+      itemCode,
+      location,
+      qty: parseFloat(qty),
+      user: addedBy,
+      date: new Date().toISOString(),
+      isNew: isNewSystemItem,
+      itemDesc: itemDesc
+    };
+
+    await db.collection('countedStock').add(entry);
+    return entry;
+  } catch (e) {
+    throw e;
+  }
+}
+
+async function getItemCountHistory(itemCode) {
+  const snapshot = await db.collection('countedStock')
+    .where('itemCode', '==', itemCode)
+    .get();
+
+  let results = [];
+  snapshot.forEach(doc => results.push(doc.data()));
+  
+  // Sort client-side to avoid requiring a composite index in Firestore
+  results.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return results;
+}
+
+// For generating the final report. We need to aggregate counts per itemCode
+async function getFullReportData() {
+  const sysSnapshot = await db.collection('systemStock').get();
+  const cntSnapshot = await db.collection('countedStock').get();
+
+  let sysItems = {};
+  let reportMap = {};
+
+  sysSnapshot.forEach(doc => {
+    const item = doc.data();
+    sysItems[item.itemCode] = item;
+
+    reportMap[item.itemCode] = {
+      ItemCode: item.itemCode,
+      ItemDescription: item.itemDesc,
+      SystemStock: item.sysQty,
+      TotalPhysicalStock: 0,
+      Difference: -item.sysQty,
+      CountedBy: new Set(),
+      LocationsCounted: new Set(),
+      DateAndTime: []
+    };
+  });
+
+  cntSnapshot.forEach(doc => {
+    const c = doc.data();
+    if (!reportMap[c.itemCode]) {
+      // Unlisted item
+      reportMap[c.itemCode] = {
+        ItemCode: c.itemCode + " (NOT IN SYS)",
+        ItemDescription: c.itemDesc || "N/A",
+        SystemStock: 0,
+        TotalPhysicalStock: 0,
+        Difference: 0,
+        CountedBy: new Set(),
+        LocationsCounted: new Set(),
+        DateAndTime: []
+      };
+    }
+    let rm = reportMap[c.itemCode];
+    rm.TotalPhysicalStock += c.qty;
+    rm.Difference = rm.TotalPhysicalStock - rm.SystemStock;
+    rm.CountedBy.add(c.user);
+    rm.LocationsCounted.add(c.location);
+    rm.DateAndTime.push(new Date(c.date).toLocaleString());
+  });
+
+  // Format for CSV
+  return Object.values(reportMap).map(row => ({
+    'Item Code': row.ItemCode,
+    'Description': row.ItemDescription,
+    'System Qty': row.SystemStock,
+    'Physical Qty': row.TotalPhysicalStock,
+    'Difference': row.Difference,
+    'Counter Name': Array.from(row.CountedBy).join(', '),
+    'Locations Counted': Array.from(row.LocationsCounted).join(', '),
+    'Date and Time': row.DateAndTime.join(' | ')
+  }));
+}
+
+async function exportReport() {
+  const data = await getFullReportData();
+  console.log("Export Data:", data);
+  if (!data || data.length === 0) {
+    console.log("Debug: Data is empty for the report.");
+    showToast('No data to report!');
+    return;
+  }
+  const csv = Papa.unparse(data);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", `Stock_Report_${new Date().toISOString().slice(0, 10)}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+// --- UI Navigation ---
+function showScreen(screenId) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(screenId).classList.add('active');
+  STATE.currentScreen = screenId;
+
+  const appBar = document.getElementById('app-bar');
+  const btnBack = document.getElementById('btn-back');
+
+  if (screenId === 'screen-login') {
+    appBar.style.display = 'none';
+  } else {
+    appBar.style.display = 'flex';
+    document.getElementById('header-user-info').textContent = `User: ${STATE.currentUser}`;
+
+    if (screenId === 'screen-count' || screenId === 'screen-add-item') {
+      btnBack.style.display = 'block';
+    } else {
+      btnBack.style.display = 'none';
+    }
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// --- Event Listeners ---
+document.addEventListener('DOMContentLoaded', async () => {
+  // Database gets initialized globally synchronously now with Firebase
+
+  // App Bar Setup
+  document.getElementById('btn-logout').addEventListener('click', () => {
+    STATE.currentUser = null;
+    showScreen('screen-login');
+  });
+
+  document.getElementById('btn-back').addEventListener('click', () => {
+    if (STATE.currentUser === 'admin') {
+      showScreen('screen-admin');
+    } else {
+      showScreen('screen-user');
+    }
+  });
+
+  // Login Form
+  document.getElementById('form-login').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const id = document.getElementById('login-id').value.trim();
+    if (id) {
+      STATE.currentUser = id;
+      document.getElementById('login-id').value = '';
+      document.getElementById('login-pass').value = '';
+      if (id.toLowerCase() === 'admin') {
+        showScreen('screen-admin');
+      } else {
+        showScreen('screen-user');
+      }
+      showToast(`Logged in as ${id}`);
+    }
+  });
+
+  // -- Admin Events --
+  const fileUpload = document.getElementById('file-upload');
+  fileUpload.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async function (results) {
+        if (results.data && results.data.length > 0) {
+          try {
+            await addSystemStockList(results.data);
+            showToast(`Imported ${results.data.length} items successfully`);
+            fileUpload.value = ''; // reset
+          } catch (err) {
+            alert("Error saving stock data: " + err);
+          }
+        }
+      }
+    });
+  });
+
+  document.getElementById('btn-generate-report').addEventListener('click', exportReport);
+
+  document.getElementById('btn-clear-db').addEventListener('click', async () => {
+    if (confirm("Are you sure? This deletes ALL system and count data!")) {
+      await clearAllData();
+      showToast("Database wiped clean.");
+    }
+  });
+
+  // -- User Events (Search) --
+  const searchInput = document.getElementById('search-input');
+  const searchResults = document.getElementById('search-results');
+  const notFoundAction = document.getElementById('not-found-action');
+
+  async function performSearch() {
+    const q = searchInput.value.trim();
+    searchResults.innerHTML = '';
+
+    if (q.length < 2) {
+      notFoundAction.style.display = 'none';
+      return;
+    }
+
+    const res = await searchSystemStock(q);
+
+    if (res.length === 0) {
+      notFoundAction.style.display = 'block';
+    } else {
+      notFoundAction.style.display = 'none';
+      res.slice(0, 15).forEach(item => { // Limit to 15 results for performance
+        const el = document.createElement('div');
+        el.className = 'list-item';
+        el.innerHTML = `
+           <div>
+             <div class="item-primary">${item.itemCode}</div>
+             <div class="item-secondary">${item.itemDesc}</div>
+           </div>
+           <div>
+              <i class="material-icons" style="color:#1976D2;">chevron_right</i>
+           </div>
+         `;
+        el.addEventListener('click', () => openCountScreen(item));
+        searchResults.appendChild(el);
+      });
+    }
+  }
+
+  searchInput.addEventListener('keyup', (e) => {
+    if (e.key === 'Enter') performSearch();
+  });
+  searchInput.addEventListener('input', () => {
+    // optional debounce here if list is huge
+    performSearch();
+  });
+
+  document.getElementById('btn-clear-search').addEventListener('click', () => {
+    searchInput.value = '';
+    searchResults.innerHTML = '';
+    notFoundAction.style.display = 'none';
+    searchInput.focus();
+  });
+
+  document.getElementById('btn-goto-add').addEventListener('click', () => {
+    document.getElementById('new-item-code').value = searchInput.value;
+    showScreen('screen-add-item');
+  });
+
+  // -- Count Detail Screen --
+  async function openCountScreen(item) {
+    STATE.selectedItem = item;
+    document.getElementById('detail-item-code').textContent = item.itemCode;
+    document.getElementById('detail-item-desc').textContent = item.itemDesc;
+
+    document.getElementById('count-location').value = '';
+    document.getElementById('count-qty').value = '';
+
+    await refreshCountStats();
+    showScreen('screen-count');
+  }
+
+  async function refreshCountStats() {
+    const itemCode = STATE.selectedItem.itemCode;
+    const sysQty = STATE.selectedItem.sysQty || 0;
+
+    const history = await getItemCountHistory(itemCode);
+
+    let totalPhys = 0;
+    const historyList = document.getElementById('count-history-list');
+    historyList.innerHTML = '';
+
+    history.forEach(h => {
+      totalPhys += h.qty;
+      const el = document.createElement('div');
+      el.className = 'list-item history-item';
+      let time = new Date(h.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      el.innerHTML = `
+         <div>
+            <div class="loc">${h.location}</div>
+            <div style="font-size:12px;color:gray;">${time} | By ${h.user}</div>
+         </div>
+         <div class="qty">${h.qty}</div>
+       `;
+      historyList.appendChild(el);
+    });
+
+    if (history.length === 0) {
+      historyList.innerHTML = '<p style="text-align:center;color:gray;font-size:14px;">No counts yet</p>';
+    }
+
+    const diff = totalPhys - sysQty;
+
+    document.getElementById('detail-sys-qty').textContent = sysQty;
+    document.getElementById('detail-phys-qty').textContent = totalPhys;
+    const diffEl = document.getElementById('detail-diff-qty');
+    const diffBox = document.getElementById('detail-diff-box');
+
+    diffEl.textContent = (diff > 0 ? '+' : '') + diff;
+
+    diffBox.className = 'stat-box'; // reset
+    if (diff > 0) diffBox.classList.add('diff-positive');
+    else if (diff < 0) diffBox.classList.add('diff-negative');
+  }
+
+  document.getElementById('form-add-count').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const loc = document.getElementById('count-location').value.trim();
+    const qty = document.getElementById('count-qty').value;
+
+    if (!loc || qty === '') return;
+
+    try {
+      await addCountEntry(STATE.selectedItem.itemCode, loc, qty, STATE.currentUser, false, STATE.selectedItem.itemDesc);
+      showToast(`Saved ${qty} at ${loc}`);
+      document.getElementById('count-location').value = '';
+      document.getElementById('count-qty').value = '';
+      document.getElementById('count-location').focus();
+      await refreshCountStats();
+    } catch (err) {
+      alert("Error saving count!");
+    }
+  });
+
+  // -- Add New Item (Not in system) --
+  document.getElementById('form-new-item').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = document.getElementById('new-item-code').value.trim();
+    const desc = document.getElementById('new-item-desc').value.trim();
+    const loc = document.getElementById('new-item-loc').value.trim();
+    const qty = document.getElementById('new-item-qty').value;
+
+    if (!code || !loc || qty === '') return;
+
+    try {
+      await addCountEntry(code, loc, qty, STATE.currentUser, true, desc);
+      showToast(`Saved unlisted item ${code}`);
+      showScreen('screen-user');
+      document.getElementById('form-new-item').reset();
+      document.getElementById('search-input').value = '';
+      document.getElementById('search-results').innerHTML = '';
+      document.getElementById('not-found-action').style.display = 'none';
+
+      // Auto-focus search for next scan
+      setTimeout(() => document.getElementById('search-input').focus(), 100);
+    } catch (err) {
+      alert("Error saving new item count!");
+    }
+  });
+});

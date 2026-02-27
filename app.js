@@ -153,7 +153,7 @@ async function getItemCountHistory(itemCode) {
 
   let results = [];
   snapshot.forEach(doc => results.push(doc.data()));
-  
+
   // Sort client-side to avoid requiring a composite index in Firestore
   results.sort((a, b) => new Date(b.date) - new Date(a.date));
   return results;
@@ -288,19 +288,35 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Login Form
+  // DEFINE YOUR TEAM MEMBERS AND PASSWORDS HERE
+  const ALLOWED_USERS = {
+    'admin': 'AdminPass2026', // Admin ID and new password
+    'rahul': '789',           // User 1
+    'amit': '456',            // User 2
+    'sunil': '123'            // User 3
+  };
+
   document.getElementById('form-login').addEventListener('submit', (e) => {
     e.preventDefault();
-    const id = document.getElementById('login-id').value.trim();
-    if (id) {
-      STATE.currentUser = id;
-      document.getElementById('login-id').value = '';
-      document.getElementById('login-pass').value = '';
-      if (id.toLowerCase() === 'admin') {
-        showScreen('screen-admin');
+    const id = document.getElementById('login-id').value.trim().toLowerCase();
+    const pass = document.getElementById('login-pass').value.trim();
+
+    if (id && pass) {
+      // Check if user exists and password matches
+      if (ALLOWED_USERS[id] && ALLOWED_USERS[id] === pass) {
+        STATE.currentUser = id;
+        document.getElementById('login-id').value = '';
+        document.getElementById('login-pass').value = '';
+
+        if (id === 'admin') {
+          showScreen('screen-admin');
+        } else {
+          showScreen('screen-user');
+        }
+        showToast(`Logged in as ${id}`);
       } else {
-        showScreen('screen-user');
+        showToast('Invalid ID or Password!');
       }
-      showToast(`Logged in as ${id}`);
     }
   });
 

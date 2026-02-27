@@ -290,10 +290,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Login Form
   // DEFINE YOUR TEAM MEMBERS AND PASSWORDS HERE
   const ALLOWED_USERS = {
-    'admin': 'AdminPass2026', // Admin ID and new password
-    'rahul': '789',           // User 1
-    'amit': '456',            // User 2
-    'sunil': '123'            // User 3
+    'pramit': 'Pmxyz@123',   // Admin
+    'anuj': 'anuj123',       // User
+    'ranjeet': 'ranj123',    // User
+    'monu': 'monu123',       // User
+    'rshri': 'rshri123',     // User
+    'lav': 'lov123',         // User
+    'shahil': 'shah123',     // User
+    'faizal': 'faiz123',     // User
+    'dhram': 'dharm123',     // User
+    'murshid': 'mursh123',   // User
+    'fhaizan': 'fhaiz123'    // User
   };
 
   document.getElementById('form-login').addEventListener('submit', (e) => {
@@ -308,7 +315,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('login-id').value = '';
         document.getElementById('login-pass').value = '';
 
-        if (id === 'admin') {
+        if (id === 'pramit') {
           showScreen('screen-admin');
         } else {
           showScreen('screen-user');

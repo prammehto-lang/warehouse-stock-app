@@ -112,7 +112,11 @@ async function searchSystemStock(query) {
   const results = [];
   snapshot.forEach(doc => {
     const data = doc.data();
-    if (data.itemCode.toLowerCase().includes(q) || data.itemDesc.toLowerCase().includes(q)) {
+    const code = data.itemCode.toLowerCase();
+    const desc = data.itemDesc.toLowerCase();
+
+    // Match if it includes the query OR if the item code ends with the query
+    if (code.includes(q) || desc.includes(q) || code.endsWith(q)) {
       results.push(data);
     }
   });
@@ -128,7 +132,7 @@ async function getSystemItem(itemCode) {
 }
 
 // Counted Stock Utilities
-async function addCountEntry(itemCode, location, qty, addedBy, isNewSystemItem = false, itemDesc = '') {
+async function addCountEntry(itemCode, location, qty, addedBy, isNewSystemItem = false, itemDesc = '', comments = '') {
   try {
     const entry = {
       itemCode,
@@ -137,7 +141,8 @@ async function addCountEntry(itemCode, location, qty, addedBy, isNewSystemItem =
       user: addedBy,
       date: new Date().toISOString(),
       isNew: isNewSystemItem,
-      itemDesc: itemDesc
+      itemDesc: itemDesc,
+      comments: comments
     };
 
     await db.collection('countedStock').add(entry);
@@ -184,7 +189,8 @@ async function getFullReportData() {
       Difference: -item.sysQty,
       CountedBy: new Set(),
       LocationsCounted: new Set(),
-      DateAndTime: []
+      DateAndTime: [],
+      AllComments: []
     };
   });
 
@@ -200,7 +206,8 @@ async function getFullReportData() {
         Difference: 0,
         CountedBy: new Set(),
         LocationsCounted: new Set(),
-        DateAndTime: []
+        DateAndTime: [],
+        AllComments: []
       };
     }
     let rm = reportMap[c.itemCode];
@@ -209,6 +216,9 @@ async function getFullReportData() {
     rm.CountedBy.add(c.user);
     rm.LocationsCounted.add(c.location);
     rm.DateAndTime.push(new Date(c.date).toLocaleString());
+    if (c.comments && c.comments.trim() !== '') {
+      rm.AllComments.push(c.comments);
+    }
   });
 
   // Format for CSV
@@ -220,7 +230,8 @@ async function getFullReportData() {
     'Difference': row.Difference,
     'Counter Name': Array.from(row.CountedBy).join(', '),
     'Locations Counted': Array.from(row.LocationsCounted).join(', '),
-    'Date and Time': row.DateAndTime.join(' | ')
+    'Date and Time': row.DateAndTime.join(' | '),
+    'Comments': row.AllComments.join(' | ')
   }));
 }
 
@@ -265,6 +276,7 @@ async function exportUserReport() {
       'Item Description': c.itemDesc || (sysItems[c.itemCode] ? sysItems[c.itemCode].itemDesc : 'N/A'),
       'Location Counted': c.location,
       'Quantity Found': c.qty,
+      'Comments': c.comments || '',
       'Date and Time': new Date(c.date).toLocaleString(),
       'Is Unlisted': c.isNew ? 'Yes' : 'No'
     });
@@ -478,15 +490,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     STATE.editingCountId = null;
     document.getElementById('count-location').value = '';
     document.getElementById('count-qty').value = '';
+    document.getElementById('count-comments').value = '';
     document.getElementById('form-count-title').textContent = 'Add Count Entry';
     document.getElementById('btn-save-count').textContent = 'SAVE COUNT';
     document.getElementById('btn-cancel-edit').style.display = 'none';
   }
 
-  function startEditCount(id, location, qty) {
+  function startEditCount(id, location, qty, comments) {
     STATE.editingCountId = id;
     document.getElementById('count-location').value = location;
     document.getElementById('count-qty').value = qty;
+    document.getElementById('count-comments').value = comments || '';
     document.getElementById('form-count-title').textContent = 'Edit Count Entry';
     document.getElementById('btn-save-count').textContent = 'UPDATE COUNT';
     document.getElementById('btn-cancel-edit').style.display = 'block';
@@ -522,9 +536,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       el.className = 'list-item history-item';
       let time = new Date(h.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       el.innerHTML = `
-         <div style="flex: 1;">
+          <div style="flex: 1;">
             <div class="loc">${h.location}</div>
             <div style="font-size:12px;color:gray;">${time} | By ${h.user}</div>
+            ${h.comments ? `<div style="font-size:12px; color:#E64A19; margin-top:2px;">💬 ${h.comments}</div>` : ''}
          </div>
          <div class="qty" style="margin-right: 15px;">${h.qty}</div>
          <div style="display: flex; flex-direction: column; gap: 5px;">
@@ -540,7 +555,7 @@ document.addEventListener('DOMContentLoaded', async () => {
          </div>
        `;
       el.querySelector('.edit-btn').addEventListener('click', () => {
-        startEditCount(h.id, h.location, h.qty);
+        startEditCount(h.id, h.location, h.qty, h.comments);
       });
       el.querySelector('.change-item-btn').addEventListener('click', () => {
         changeItemCodeForCount(h.id, h.itemCode);
@@ -606,6 +621,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     e.preventDefault();
     const loc = document.getElementById('count-location').value.trim();
     const qty = document.getElementById('count-qty').value;
+    const comments = document.getElementById('count-comments').value.trim();
 
     if (!loc || qty === '') return;
 
@@ -614,12 +630,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Edit existing entry
         await db.collection('countedStock').doc(STATE.editingCountId).update({
           location: loc,
-          qty: parseFloat(qty)
+          qty: parseFloat(qty),
+          comments: comments
         });
         showToast(`Updated to ${qty} at ${loc}`);
       } else {
         // Add new entry
-        await addCountEntry(STATE.selectedItem.itemCode, loc, qty, STATE.currentUser, false, STATE.selectedItem.itemDesc);
+        await addCountEntry(STATE.selectedItem.itemCode, loc, qty, STATE.currentUser, false, STATE.selectedItem.itemDesc, comments);
         showToast(`Saved ${qty} at ${loc}`);
       }
 
@@ -632,18 +649,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // -- Add New Item (Not in system) --
   document.getElementById('form-new-item').addEventListener('submit', async (e) => {
     e.preventDefault();
     const code = document.getElementById('new-item-code').value.trim();
     const desc = document.getElementById('new-item-desc').value.trim();
     const loc = document.getElementById('new-item-loc').value.trim();
     const qty = document.getElementById('new-item-qty').value;
+    const comments = document.getElementById('new-item-comments').value.trim();
 
     if (!code || !loc || qty === '') return;
 
     try {
-      await addCountEntry(code, loc, qty, STATE.currentUser, true, desc);
+      await addCountEntry(code, loc, qty, STATE.currentUser, true, desc, comments);
       showToast(`Saved unlisted item ${code}`);
       showScreen('screen-user');
       document.getElementById('form-new-item').reset();

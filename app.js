@@ -33,7 +33,8 @@ db.enablePersistence()
 const STATE = {
   currentUser: null,
   currentScreen: 'screen-login',
-  selectedItem: null // Currently viewing item
+  selectedItem: null, // Currently viewing item
+  editingCountId: null
 };
 
 // --- Service Worker Registration ---
@@ -152,7 +153,11 @@ async function getItemCountHistory(itemCode) {
     .get();
 
   let results = [];
-  snapshot.forEach(doc => results.push(doc.data()));
+  snapshot.forEach(doc => {
+    let data = doc.data();
+    data.id = doc.id;
+    results.push(data);
+  });
 
   // Sort client-side to avoid requiring a composite index in Firestore
   results.sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -233,6 +238,56 @@ async function exportReport() {
   const url = URL.createObjectURL(blob);
   link.setAttribute("href", url);
   link.setAttribute("download", `Stock_Report_${new Date().toISOString().slice(0, 10)}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+// User-wise Report logic
+async function exportUserReport() {
+  const cntSnapshot = await db.collection('countedStock').get();
+
+  // Also get system items just for descriptions if available
+  const sysSnapshot = await db.collection('systemStock').get();
+  let sysItems = {};
+  sysSnapshot.forEach(doc => {
+    sysItems[doc.id] = doc.data();
+  });
+
+  let reportData = [];
+
+  cntSnapshot.forEach(doc => {
+    const c = doc.data();
+    reportData.push({
+      'Counter Name': c.user || 'Unknown',
+      'Item Code': c.itemCode,
+      'Item Description': c.itemDesc || (sysItems[c.itemCode] ? sysItems[c.itemCode].itemDesc : 'N/A'),
+      'Location Counted': c.location,
+      'Quantity Found': c.qty,
+      'Date and Time': new Date(c.date).toLocaleString(),
+      'Is Unlisted': c.isNew ? 'Yes' : 'No'
+    });
+  });
+
+  if (reportData.length === 0) {
+    showToast('No user count data available!');
+    return;
+  }
+
+  // Sort by user name, then by Date
+  reportData.sort((a, b) => {
+    if (a['Counter Name'] < b['Counter Name']) return -1;
+    if (a['Counter Name'] > b['Counter Name']) return 1;
+    return new Date(b['Date and Time']) - new Date(a['Date and Time']);
+  });
+
+  const csv = Papa.unparse(reportData);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", `User_Detailed_Report_${new Date().toISOString().slice(0, 10)}.csv`);
   link.style.visibility = 'hidden';
   document.body.appendChild(link);
   link.click();
@@ -351,6 +406,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('btn-generate-report').addEventListener('click', exportReport);
+  document.getElementById('btn-generate-user-report').addEventListener('click', exportUserReport);
 
   document.getElementById('btn-clear-db').addEventListener('click', async () => {
     if (confirm("Are you sure? This deletes ALL system and count data!")) {
@@ -418,13 +474,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // -- Count Detail Screen --
+  function resetEditForm() {
+    STATE.editingCountId = null;
+    document.getElementById('count-location').value = '';
+    document.getElementById('count-qty').value = '';
+    document.getElementById('form-count-title').textContent = 'Add Count Entry';
+    document.getElementById('btn-save-count').textContent = 'SAVE COUNT';
+    document.getElementById('btn-cancel-edit').style.display = 'none';
+  }
+
+  function startEditCount(id, location, qty) {
+    STATE.editingCountId = id;
+    document.getElementById('count-location').value = location;
+    document.getElementById('count-qty').value = qty;
+    document.getElementById('form-count-title').textContent = 'Edit Count Entry';
+    document.getElementById('btn-save-count').textContent = 'UPDATE COUNT';
+    document.getElementById('btn-cancel-edit').style.display = 'block';
+
+    // Scroll smoothly to form
+    document.getElementById('form-add-count').scrollIntoView({ behavior: 'smooth' });
+  }
+
   async function openCountScreen(item) {
     STATE.selectedItem = item;
     document.getElementById('detail-item-code').textContent = item.itemCode;
     document.getElementById('detail-item-desc').textContent = item.itemDesc;
 
-    document.getElementById('count-location').value = '';
-    document.getElementById('count-qty').value = '';
+    resetEditForm();
 
     await refreshCountStats();
     showScreen('screen-count');
@@ -446,12 +522,32 @@ document.addEventListener('DOMContentLoaded', async () => {
       el.className = 'list-item history-item';
       let time = new Date(h.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       el.innerHTML = `
-         <div>
+         <div style="flex: 1;">
             <div class="loc">${h.location}</div>
             <div style="font-size:12px;color:gray;">${time} | By ${h.user}</div>
          </div>
-         <div class="qty">${h.qty}</div>
+         <div class="qty" style="margin-right: 15px;">${h.qty}</div>
+         <div style="display: flex; flex-direction: column; gap: 5px;">
+           <button class="icon-btn edit-btn" style="padding: 5px;" title="Edit Location/Qty">
+              <i class="material-icons" style="font-size: 20px; color: #1976D2;">edit</i>
+           </button>
+           <button class="icon-btn change-item-btn" style="padding: 5px;" title="Change Item Code">
+              <i class="material-icons" style="font-size: 20px; color: #E64A19;">swap_horiz</i>
+           </button>
+           <button class="icon-btn delete-btn" style="padding: 5px;" title="Delete Entry">
+              <i class="material-icons" style="font-size: 20px; color: #D32F2F;">delete</i>
+           </button>
+         </div>
        `;
+      el.querySelector('.edit-btn').addEventListener('click', () => {
+        startEditCount(h.id, h.location, h.qty);
+      });
+      el.querySelector('.change-item-btn').addEventListener('click', () => {
+        changeItemCodeForCount(h.id, h.itemCode);
+      });
+      el.querySelector('.delete-btn').addEventListener('click', () => {
+        deleteCountEntry(h.id);
+      });
       historyList.appendChild(el);
     });
 
@@ -473,6 +569,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     else if (diff < 0) diffBox.classList.add('diff-negative');
   }
 
+  async function deleteCountEntry(countId) {
+    if (confirm("Are you sure you want to delete this count entry?")) {
+      try {
+        await db.collection('countedStock').doc(countId).delete();
+        showToast("Count entry deleted.");
+        await refreshCountStats();
+      } catch (err) {
+        alert("Error deleting entry!");
+        console.error(err);
+      }
+    }
+  }
+
+  async function changeItemCodeForCount(countId, currentCode) {
+    const newCode = prompt(`Enter the CORRECT Item Code to move this count to:\n(Current: ${currentCode})`);
+    if (newCode && newCode.trim() !== '' && newCode.trim() !== currentCode) {
+      if (confirm(`Move this count from ${currentCode} to ${newCode.trim()}?`)) {
+        try {
+          await db.collection('countedStock').doc(countId).update({
+            itemCode: newCode.trim()
+          });
+          showToast(`Moved to ${newCode.trim()}`);
+          await refreshCountStats();
+        } catch (err) {
+          alert("Error moving entry!");
+          console.error(err);
+        }
+      }
+    }
+  }
+
+  document.getElementById('btn-cancel-edit').addEventListener('click', resetEditForm);
+
   document.getElementById('form-add-count').addEventListener('submit', async (e) => {
     e.preventDefault();
     const loc = document.getElementById('count-location').value.trim();
@@ -481,14 +610,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!loc || qty === '') return;
 
     try {
-      await addCountEntry(STATE.selectedItem.itemCode, loc, qty, STATE.currentUser, false, STATE.selectedItem.itemDesc);
-      showToast(`Saved ${qty} at ${loc}`);
-      document.getElementById('count-location').value = '';
-      document.getElementById('count-qty').value = '';
+      if (STATE.editingCountId) {
+        // Edit existing entry
+        await db.collection('countedStock').doc(STATE.editingCountId).update({
+          location: loc,
+          qty: parseFloat(qty)
+        });
+        showToast(`Updated to ${qty} at ${loc}`);
+      } else {
+        // Add new entry
+        await addCountEntry(STATE.selectedItem.itemCode, loc, qty, STATE.currentUser, false, STATE.selectedItem.itemDesc);
+        showToast(`Saved ${qty} at ${loc}`);
+      }
+
+      resetEditForm();
       document.getElementById('count-location').focus();
       await refreshCountStats();
     } catch (err) {
-      alert("Error saving count!");
+      alert("Error saving/updating count!");
+      console.error(err);
     }
   });
 

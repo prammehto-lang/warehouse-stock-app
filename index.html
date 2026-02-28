@@ -85,6 +85,12 @@
       </div>
 
       <div class="action-section divider">
+        <button id="btn-generate-user-report" class="btn btn-secondary btn-large">
+          <i class="material-icons">assignment_ind</i> GENERATE USER-WISE REPORT
+        </button>
+      </div>
+
+      <div class="action-section divider">
         <button id="btn-clear-db" class="btn btn-danger btn-large">
           <i class="material-icons">delete_forever</i> WIPE ALL DATA
         </button>
@@ -140,7 +146,7 @@
         </div>
       </div>
 
-      <h3 class="section-title">Add Count Entry</h3>
+      <h3 class="section-title" id="form-count-title">Add Count Entry</h3>
       <form id="form-add-count" class="card">
         <div class="input-group">
           <label for="count-location">Location (Bin/Rack)</label>
@@ -150,7 +156,12 @@
           <label for="count-qty">Quantity Found</label>
           <input type="number" id="count-qty" required min="0" placeholder="0" autocomplete="off">
         </div>
-        <button type="submit" class="btn btn-primary btn-large">SAVE COUNT</button>
+        <div style="display: flex; gap: 10px;">
+          <button type="submit" id="btn-save-count" class="btn btn-primary btn-large" style="flex: 1;">SAVE
+            COUNT</button>
+          <button type="button" id="btn-cancel-edit" class="btn btn-secondary btn-large"
+            style="display: none; flex: 1;">CANCEL</button>
+        </div>
       </form>
 
       <h3 class="section-title">Count History for Item</h3>

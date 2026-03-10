@@ -91,6 +91,12 @@
       </div>
 
       <div class="action-section divider">
+        <button id="btn-export-transactions" class="btn btn-secondary btn-large" style="background-color: #4CAF50; color: white; border-color: transparent;">
+          <i class="material-icons">sync_alt</i> EXPORT IN/OUT REPORT
+        </button>
+      </div>
+
+      <div class="action-section divider">
         <button id="btn-clear-db" class="btn btn-danger btn-large">
           <i class="material-icons">delete_forever</i> WIPE ALL DATA
         </button>
@@ -146,31 +152,106 @@
         </div>
       </div>
 
-      <h3 class="section-title" id="form-count-title">Add Count Entry</h3>
-      <form id="form-add-count" class="card">
-        <div class="input-group">
-          <label for="count-location">Location (Bin/Rack)</label>
-          <input type="text" id="count-location" required placeholder="e.g. A1-Rack2" autocomplete="off">
-        </div>
-        <div class="input-group">
-          <label for="count-qty">Quantity Found</label>
-          <input type="number" id="count-qty" required min="0" placeholder="0" autocomplete="off">
-        </div>
-        <div class="input-group">
-          <label for="count-comments">Comments (Optional)</label>
-          <input type="text" id="count-comments" placeholder="Any remarks" autocomplete="off">
-        </div>
-        <div style="display: flex; gap: 10px;">
-          <button type="submit" id="btn-save-count" class="btn btn-primary btn-large" style="flex: 1;">SAVE
-            COUNT</button>
-          <button type="button" id="btn-cancel-edit" class="btn btn-secondary btn-large"
-            style="display: none; flex: 1;">CANCEL</button>
-        </div>
-      </form>
+      <!-- Tab Navigation -->
+      <div class="tab-container card" style="padding: 0; display: flex; overflow: hidden; margin-bottom: 20px;">
+        <button id="tab-btn-live" class="tab-btn active" style="flex: 1; padding: 15px; border: none; background: #1976D2; color: white; font-weight: bold; cursor: pointer;">Live Inventory</button>
+        <button id="tab-btn-count" class="tab-btn" style="flex: 1; padding: 15px; border: none; background: #e0e0e0; color: #333; font-weight: bold; cursor: pointer;">Physical Count</button>
+      </div>
 
-      <h3 class="section-title">Count History for Item</h3>
-      <div id="count-history-list" class="results-list history-list">
-        <!-- History items populate here -->
+      <!-- TAB: LIVE INVENTORY -->
+      <div id="tab-content-live">
+        <div class="stats-grid card" style="margin-bottom: 20px; gap: 10px;">
+          <div class="stat-box" style="padding: 10px;">
+            <span class="stat-label">System Qty</span>
+            <strong id="live-sys-qty" class="stat-value">0</strong>
+          </div>
+          <div class="stat-box highlight" style="padding: 10px; color: #4CAF50;">
+            <span class="stat-label">Total IN</span>
+            <strong id="live-in-qty" class="stat-value">0</strong>
+          </div>
+          <div class="stat-box highlight" style="padding: 10px; color: #E64A19;">
+            <span class="stat-label">Total OUT</span>
+            <strong id="live-out-qty" class="stat-value">0</strong>
+          </div>
+          <div class="stat-box highlight" style="padding: 10px; background: #e3f2fd; color: #1976D2; grid-column: span 3;">
+            <span class="stat-label">Live Balance</span>
+            <strong id="live-balance-qty" class="stat-value" style="font-size: 1.5em;">0</strong>
+          </div>
+        </div>
+
+        <h3 class="section-title">Record IN / OUT</h3>
+        <form id="form-transaction" class="card">
+          <div class="input-group">
+            <label>Transaction Type</label>
+            <select id="trans-type" style="width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px;">
+              <option value="IN">Stock IN (Receive)</option>
+              <option value="OUT">Stock OUT (Dispatch)</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label for="trans-location">Location (Rack/Bin)</label>
+            <input type="text" id="trans-location" required placeholder="e.g. A1-Rack2" autocomplete="off">
+          </div>
+          <div class="input-group">
+            <label for="trans-qty">Quantity</label>
+            <input type="number" id="trans-qty" required min="1" step="0.01" placeholder="Enter quantity" autocomplete="off">
+          </div>
+          <div class="input-group">
+            <label for="trans-comments">Ref / Comments (Optional)</label>
+            <input type="text" id="trans-comments" placeholder="PO Number / Remarks" autocomplete="off">
+          </div>
+          <button type="submit" id="btn-save-trans" class="btn btn-primary btn-large" style="background-color: #4CAF50;">SAVE TRANSACTION</button>
+        </form>
+
+        <h3 class="section-title">Location Balances</h3>
+        <div id="location-balance-list" class="results-list history-list card" style="padding: 10px;">
+        </div>
+
+        <h3 class="section-title">Transaction History</h3>
+        <div id="transaction-history-list" class="results-list history-list">
+        </div>
+      </div>
+
+      <!-- TAB: PHYSICAL COUNT -->
+      <div id="tab-content-count" style="display: none;">
+        <div class="stats-grid card" style="margin-bottom: 20px;">
+          <div class="stat-box">
+            <span class="stat-label">Live Balance</span>
+            <strong id="count-live-qty" class="stat-value">0</strong>
+          </div>
+          <div class="stat-box highlight">
+            <span class="stat-label">Physical Qty</span>
+            <strong id="detail-phys-qty-tab" class="stat-value">0</strong>
+          </div>
+          <div class="stat-box" id="detail-diff-box-tab">
+            <span class="stat-label">Variance</span>
+            <strong id="detail-diff-qty-tab" class="stat-value">0</strong>
+          </div>
+        </div>
+
+        <h3 class="section-title" id="form-count-title">Add Count Entry</h3>
+        <form id="form-add-count" class="card">
+          <div class="input-group">
+            <label for="count-location">Location (Bin/Rack)</label>
+            <input type="text" id="count-location" required placeholder="e.g. A1-Rack2" autocomplete="off">
+          </div>
+          <div class="input-group">
+            <label for="count-qty">Quantity Found</label>
+            <input type="number" id="count-qty" required min="0" step="0.01" placeholder="0" autocomplete="off">
+          </div>
+          <div class="input-group">
+            <label for="count-comments">Comments (Optional)</label>
+            <input type="text" id="count-comments" placeholder="Any remarks" autocomplete="off">
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <button type="submit" id="btn-save-count" class="btn btn-primary btn-large" style="flex: 1;">SAVE COUNT</button>
+            <button type="button" id="btn-cancel-edit" class="btn btn-secondary btn-large" style="display: none; flex: 1;">CANCEL</button>
+          </div>
+        </form>
+
+        <h3 class="section-title">Count History</h3>
+        <div id="count-history-list" class="results-list history-list">
+        </div>
       </div>
     </div>
   </main>

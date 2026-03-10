@@ -34,7 +34,8 @@ const STATE = {
   currentUser: null,
   currentScreen: 'screen-login',
   selectedItem: null, // Currently viewing item
-  editingCountId: null
+  editingCountId: null,
+  currentLiveBalance: 0
 };
 
 // --- Service Worker Registration ---
@@ -57,10 +58,12 @@ function clearAllData() {
       // However, for this admin function, we manually fetch and delete all documents.
       const sysQuery = await db.collection('systemStock').get();
       const cntQuery = await db.collection('countedStock').get();
+      const txQuery  = await db.collection('inventoryTransactions').get();
 
       const batch = db.batch();
       sysQuery.docs.forEach(doc => batch.delete(doc.ref));
       cntQuery.docs.forEach(doc => batch.delete(doc.ref));
+      txQuery.docs.forEach(doc => batch.delete(doc.ref));
 
       await batch.commit();
       resolve();
@@ -129,6 +132,41 @@ async function getSystemItem(itemCode) {
     return doc.data();
   }
   return null;
+}
+
+// --- Transaction (IN/OUT) Utilities ---
+async function addTransaction(itemCode, type, location, qty, addedBy, itemDesc = '', comments = '') {
+  try {
+    const entry = {
+      itemCode,
+      type, // 'IN' or 'OUT'
+      location,
+      qty: parseFloat(qty),
+      user: addedBy,
+      date: new Date().toISOString(),
+      itemDesc: itemDesc,
+      comments: comments
+    };
+    await db.collection('inventoryTransactions').add(entry);
+    return entry;
+  } catch (e) {
+    throw e;
+  }
+}
+
+async function getItemTransactions(itemCode) {
+  const snapshot = await db.collection('inventoryTransactions')
+    .where('itemCode', '==', itemCode)
+    .get();
+
+  let results = [];
+  snapshot.forEach(doc => {
+    let data = doc.data();
+    data.id = doc.id;
+    results.push(data);
+  });
+  results.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return results;
 }
 
 // Counted Stock Utilities
@@ -306,6 +344,46 @@ async function exportUserReport() {
   document.body.removeChild(link);
 }
 
+async function exportTransactionReport() {
+  const txSnapshot = await db.collection('inventoryTransactions').get();
+  const sysSnapshot = await db.collection('systemStock').get();
+  let sysItems = {};
+  sysSnapshot.forEach(doc => { sysItems[doc.id] = doc.data(); });
+
+  let reportData = [];
+  txSnapshot.forEach(doc => {
+    const t = doc.data();
+    reportData.push({
+      'Date and Time': new Date(t.date).toLocaleString(),
+      'User': t.user || 'Unknown',
+      'Item Code': t.itemCode,
+      'Item Description': t.itemDesc || (sysItems[t.itemCode] ? sysItems[t.itemCode].itemDesc : 'N/A'),
+      'Type': t.type,
+      'Location': t.location,
+      'Quantity': t.qty,
+      'Comments': t.comments || ''
+    });
+  });
+
+  if (reportData.length === 0) {
+    showToast('No transactions data available!');
+    return;
+  }
+
+  reportData.sort((a, b) => new Date(b['Date and Time']) - new Date(a['Date and Time']));
+
+  const csv = Papa.unparse(reportData);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", `Transactions_Report_${new Date().toISOString().slice(0, 10)}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 // --- UI Navigation ---
 function showScreen(screenId) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -419,6 +497,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('btn-generate-report').addEventListener('click', exportReport);
   document.getElementById('btn-generate-user-report').addEventListener('click', exportUserReport);
+  document.getElementById('btn-export-transactions').addEventListener('click', exportTransactionReport);
 
   document.getElementById('btn-clear-db').addEventListener('click', async () => {
     if (confirm("Are you sure? This deletes ALL system and count data!")) {
@@ -516,13 +595,88 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     resetEditForm();
 
+    // Reset Tabs
+    document.getElementById('tab-btn-live').click();
+
+    await refreshTransactionStats();
     await refreshCountStats();
     showScreen('screen-count');
   }
 
-  async function refreshCountStats() {
+  async function refreshTransactionStats() {
     const itemCode = STATE.selectedItem.itemCode;
     const sysQty = STATE.selectedItem.sysQty || 0;
+
+    const txs = await getItemTransactions(itemCode);
+    
+    let totalIn = 0;
+    let totalOut = 0;
+    let locBalances = {};
+
+    const txList = document.getElementById('transaction-history-list');
+    txList.innerHTML = '';
+
+    txs.forEach(tx => {
+      if (tx.type === 'IN') totalIn += tx.qty;
+      else if (tx.type === 'OUT') totalOut += tx.qty;
+      
+      if (!locBalances[tx.location]) locBalances[tx.location] = 0;
+      if (tx.type === 'IN') locBalances[tx.location] += tx.qty;
+      else if (tx.type === 'OUT') locBalances[tx.location] -= tx.qty;
+
+      const el = document.createElement('div');
+      el.className = 'list-item history-item';
+      let time = new Date(tx.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      let color = tx.type === 'IN' ? '#4CAF50' : '#E64A19';
+      el.innerHTML = `
+          <div style="flex: 1;">
+            <div class="loc">${tx.type} @ ${tx.location}</div>
+            <div style="font-size:12px;color:gray;">${time} | By ${tx.user}</div>
+            ${tx.comments ? `<div style="font-size:12px; color:gray; margin-top:2px;">💬 ${tx.comments}</div>` : ''}
+         </div>
+         <div class="qty" style="color: ${color}; font-weight: bold; margin-right: 15px;">
+            ${tx.type === 'IN' ? '+' : '-'}${tx.qty}
+         </div>
+      `;
+      txList.appendChild(el);
+    });
+
+    if (txs.length === 0) {
+      txList.innerHTML = '<p style="text-align:center;color:gray;font-size:14px;">No transactions yet</p>';
+    }
+
+    const locList = document.getElementById('location-balance-list');
+    locList.innerHTML = '';
+    let hasLocs = false;
+    for (let loc in locBalances) {
+      if (locBalances[loc] !== 0) {
+        hasLocs = true;
+        const div = document.createElement('div');
+        div.style.display = 'flex';
+        div.style.justifyContent = 'space-between';
+        div.style.padding = '8px 0';
+        div.style.borderBottom = '1px solid #eee';
+        div.innerHTML = `<span><strong>${loc}</strong></span> <span class="qty">${locBalances[loc]}</span>`;
+        locList.appendChild(div);
+      }
+    }
+    if (!hasLocs) {
+      locList.innerHTML = '<p style="text-align:center;color:gray;font-size:14px; margin: 5px;">No inventory in locations</p>';
+    }
+
+    const liveBalance = sysQty + totalIn - totalOut;
+    STATE.currentLiveBalance = liveBalance;
+
+    document.getElementById('live-sys-qty').textContent = sysQty;
+    document.getElementById('live-in-qty').textContent = totalIn;
+    document.getElementById('live-out-qty').textContent = totalOut;
+    document.getElementById('live-balance-qty').textContent = liveBalance;
+    document.getElementById('count-live-qty').textContent = liveBalance;
+  }
+
+  async function refreshCountStats() {
+    const itemCode = STATE.selectedItem.itemCode;
+    const liveBalance = STATE.currentLiveBalance || 0;
 
     const history = await getItemCountHistory(itemCode);
 
@@ -570,12 +724,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       historyList.innerHTML = '<p style="text-align:center;color:gray;font-size:14px;">No counts yet</p>';
     }
 
-    const diff = totalPhys - sysQty;
+    const diff = totalPhys - liveBalance;
 
-    document.getElementById('detail-sys-qty').textContent = sysQty;
-    document.getElementById('detail-phys-qty').textContent = totalPhys;
-    const diffEl = document.getElementById('detail-diff-qty');
-    const diffBox = document.getElementById('detail-diff-box');
+    document.getElementById('detail-phys-qty-tab').textContent = totalPhys;
+    const diffEl = document.getElementById('detail-diff-qty-tab');
+    const diffBox = document.getElementById('detail-diff-box-tab');
 
     diffEl.textContent = (diff > 0 ? '+' : '') + diff;
 
@@ -614,6 +767,53 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
   }
+
+  document.getElementById('tab-btn-live').addEventListener('click', () => {
+    document.getElementById('tab-btn-live').classList.add('active');
+    document.getElementById('tab-btn-live').style.background = '#1976D2';
+    document.getElementById('tab-btn-live').style.color = 'white';
+    document.getElementById('tab-btn-count').classList.remove('active');
+    document.getElementById('tab-btn-count').style.background = '#e0e0e0';
+    document.getElementById('tab-btn-count').style.color = '#333';
+    document.getElementById('tab-content-live').style.display = 'block';
+    document.getElementById('tab-content-count').style.display = 'none';
+  });
+
+  document.getElementById('tab-btn-count').addEventListener('click', () => {
+    document.getElementById('tab-btn-count').classList.add('active');
+    document.getElementById('tab-btn-count').style.background = '#1976D2';
+    document.getElementById('tab-btn-count').style.color = 'white';
+    document.getElementById('tab-btn-live').classList.remove('active');
+    document.getElementById('tab-btn-live').style.background = '#e0e0e0';
+    document.getElementById('tab-btn-live').style.color = '#333';
+    document.getElementById('tab-content-live').style.display = 'none';
+    document.getElementById('tab-content-count').style.display = 'block';
+  });
+
+  document.getElementById('form-transaction').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const type = document.getElementById('trans-type').value;
+    const loc = document.getElementById('trans-location').value.trim();
+    const qty = document.getElementById('trans-qty').value;
+    const comments = document.getElementById('trans-comments').value.trim();
+
+    if (!loc || qty === '') return;
+
+    try {
+      await addTransaction(STATE.selectedItem.itemCode, type, loc, qty, STATE.currentUser, STATE.selectedItem.itemDesc, comments);
+      showToast(`${type} transaction saved: ${qty} at ${loc}`);
+      
+      document.getElementById('trans-qty').value = '';
+      document.getElementById('trans-comments').value = '';
+      document.getElementById('trans-location').focus();
+      
+      await refreshTransactionStats();
+      await refreshCountStats();
+    } catch (err) {
+      alert("Error saving transaction!");
+      console.error(err);
+    }
+  });
 
   document.getElementById('btn-cancel-edit').addEventListener('click', resetEditForm);
 

@@ -22,6 +22,11 @@
   <!-- Firebase SDK (Compat Version for Vanilla JS) -->
   <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-storage-compat.js"></script>
+
+  <!-- Libraries for new features -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
 
   <link rel="stylesheet" href="style.css">
 </head>
@@ -75,6 +80,20 @@
           <input type="file" id="file-upload" accept=".csv, .xlsx, .xls" style="display: none;">
         </label>
         <small class="helper-text">Columns: Stock Date, Item Code, Item Description, System Stock Qty</small>
+      </div>
+
+      <!-- Admin Charts -->
+      <div class="action-section divider" id="admin-charts-section" style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #eee; display:none;">
+        <h3>Inventory Health</h3>
+        <p style="font-size: 13px; color: gray; margin-bottom: 10px;">Visual representation of count progress and variances.</p>
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+          <div class="card" style="padding: 10px;">
+            <canvas id="chart-progress" style="max-height: 200px;"></canvas>
+          </div>
+          <div class="card" style="padding: 10px;">
+            <canvas id="chart-variance" style="max-height: 250px;"></canvas>
+          </div>
+        </div>
       </div>
 
       <div class="action-section divider">
@@ -138,6 +157,7 @@
       <div class="search-box card">
         <i class="material-icons search-icon">search</i>
         <input type="text" id="search-input" placeholder="Search by Item Code..." autocomplete="off">
+        <button id="btn-scan-barcode" class="icon-btn" style="color: #1976D2;"><i class="material-icons">qr_code_scanner</i></button>
         <button id="btn-clear-search" class="icon-btn"><i class="material-icons">close</i></button>
       </div>
 
@@ -219,6 +239,7 @@
           <div class="input-group">
             <label for="trans-location">Location (Rack/Bin)</label>
             <input type="text" id="trans-location" required placeholder="e.g. A1-Rack2" autocomplete="off">
+            <label style="font-size: 12px; margin-top: 5px; display:flex; align-items:center;"><input type="checkbox" id="sticky-trans-loc" style="width: auto; margin-right: 5px;"> Keep Location</label>
           </div>
           <div class="input-group">
             <label for="trans-qty">Quantity</label>
@@ -227,6 +248,10 @@
           <div class="input-group">
             <label for="trans-comments">Ref / Comments (Optional)</label>
             <input type="text" id="trans-comments" placeholder="PO Number / Remarks" autocomplete="off">
+          </div>
+          <div class="input-group">
+            <label for="trans-photo">Attach Photo Evidence (Optional)</label>
+            <input type="file" id="trans-photo" accept="image/*" capture="environment">
           </div>
           <button type="submit" id="btn-save-trans" class="btn btn-primary btn-large" style="background-color: #4CAF50;">SAVE TRANSACTION</button>
         </form>
@@ -262,6 +287,7 @@
           <div class="input-group">
             <label for="count-location">Location (Bin/Rack)</label>
             <input type="text" id="count-location" required placeholder="e.g. A1-Rack2" autocomplete="off">
+            <label style="font-size: 12px; margin-top: 5px; display:flex; align-items:center;"><input type="checkbox" id="sticky-count-loc" style="width: auto; margin-right: 5px;"> Keep Location</label>
           </div>
           <div class="input-group">
             <label for="count-qty">Quantity Found</label>
@@ -270,6 +296,10 @@
           <div class="input-group">
             <label for="count-comments">Comments (Optional)</label>
             <input type="text" id="count-comments" placeholder="Any remarks" autocomplete="off">
+          </div>
+          <div class="input-group">
+            <label for="count-photo">Attach Photo Evidence (Optional)</label>
+            <input type="file" id="count-photo" accept="image/*" capture="environment">
           </div>
           <div style="display: flex; gap: 10px;">
             <button type="submit" id="btn-save-count" class="btn btn-primary btn-large" style="flex: 1;">SAVE COUNT</button>
@@ -316,6 +346,17 @@
       </div>
     </div>
   </main>
+
+  <!-- Scanner Modal -->
+  <div id="scanner-modal" class="modal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+    <div class="modal-content card" style="width: 90%; max-width: 400px; padding: 20px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+        <h3 style="margin:0;">Scan Barcode</h3>
+        <button id="btn-close-scanner" class="icon-btn" style="color: #D32F2F;"><i class="material-icons">close</i></button>
+      </div>
+      <div id="qr-reader" style="width:100%"></div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

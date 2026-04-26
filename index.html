@@ -58,8 +58,7 @@
         <button type="submit" class="btn btn-primary btn-large">LOGIN</button>
       </form>
       <div class="login-hint">
-        <small>Demo Accounts (See app.js for actual users):<br>Admin => ID: <b>pramit</b><br>User => ID: <b>anuj</b>,
-          <b>ranjeet</b>, <b>monu</b>...</small>
+        <small>System requires active internet connection on first login or after user updates.<br>Default Admin => ID: <b>pramit</b></small>
       </div>
     </div>
   </main>
@@ -100,6 +99,35 @@
         <button id="btn-clear-db" class="btn btn-danger btn-large">
           <i class="material-icons">delete_forever</i> WIPE ALL DATA
         </button>
+      </div>
+
+      <div class="action-section divider" style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #eee;">
+        <h3>Manage Users</h3>
+        <p>Add, edit, or remove user accounts.</p>
+        
+        <form id="form-add-user" class="card" style="margin-bottom: 20px; background-color: #f9f9f9; padding: 15px;">
+          <div class="input-group">
+            <label for="new-user-id">Username</label>
+            <input type="text" id="new-user-id" required placeholder="User ID (lowercase, no spaces)" autocomplete="off">
+          </div>
+          <div class="input-group">
+            <label for="new-user-pass">Password</label>
+            <input type="text" id="new-user-pass" required placeholder="Password" autocomplete="off">
+          </div>
+          <div class="input-group">
+            <label>Role</label>
+            <select id="new-user-role" style="width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px;">
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px; font-weight: bold;">ADD / UPDATE USER</button>
+        </form>
+
+        <div id="users-list" class="results-list" style="max-height: 400px; overflow-y: auto;">
+          <!-- Users will be populated here -->
+          <p style="text-align:center;color:gray;font-size:14px;">Loading users...</p>
+        </div>
       </div>
     </div>
   </main>

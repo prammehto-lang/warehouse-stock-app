@@ -425,52 +425,147 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('btn-back').addEventListener('click', () => {
-    if (STATE.currentUser === 'admin') {
+    if (STATE.currentUserRole === 'admin' || STATE.currentUser === 'admin' || STATE.currentUser === 'pramit') {
       showScreen('screen-admin');
     } else {
       showScreen('screen-user');
     }
   });
 
-  // Login Form
-  // DEFINE YOUR TEAM MEMBERS AND PASSWORDS HERE
-  const ALLOWED_USERS = {
-    'pramit': 'Pmxyz@123',   // Admin
-    'anuj': 'anuj123',       // User
-    'ranjeet': 'ranj123',    // User
-    'monu': 'monu123',       // User
-    'rshri': 'rshri123',     // User
-    'lav': 'lov123',         // User
-    'shahil': 'shah123',     // User
-    'faizal': 'faiz123',     // User
-    'dhram': 'dharm123',     // User
-    'murshid': 'mursh123',   // User
-    'fhaizan': 'fhaiz123'    // User
-  };
+  // Application User Management Init
+  const DEFAULT_ADMIN = 'pramit';
+  const DEFAULT_ADMIN_PASS = 'Pmxyz@251983';
 
-  document.getElementById('form-login').addEventListener('submit', (e) => {
+  // Initialize Admin user if appUsers collection is empty
+  async function initAppUsers() {
+    try {
+      const snap = await db.collection('appUsers').limit(1).get();
+      if (snap.empty) {
+        await db.collection('appUsers').doc(DEFAULT_ADMIN).set({
+          pass: DEFAULT_ADMIN_PASS,
+          role: 'admin'
+        });
+        console.log("Initialized default admin user");
+      }
+    } catch(err) {
+      console.log("Error initializing users: ", err);
+    }
+  }
+
+  // Call initialization
+  initAppUsers();
+
+  document.getElementById('form-login').addEventListener('submit', async (e) => {
     e.preventDefault();
     const id = document.getElementById('login-id').value.trim().toLowerCase();
     const pass = document.getElementById('login-pass').value.trim();
 
     if (id && pass) {
-      // Check if user exists and password matches
-      if (ALLOWED_USERS[id] && ALLOWED_USERS[id] === pass) {
-        STATE.currentUser = id;
-        document.getElementById('login-id').value = '';
-        document.getElementById('login-pass').value = '';
+      try {
+        const userDoc = await db.collection('appUsers').doc(id).get();
+        if (userDoc.exists && userDoc.data().pass === pass) {
+          const role = userDoc.data().role;
+          STATE.currentUser = id;
+          STATE.currentUserRole = role; // Store role
+          
+          document.getElementById('login-id').value = '';
+          document.getElementById('login-pass').value = '';
 
-        if (id === 'pramit') {
-          showScreen('screen-admin');
+          if (role === 'admin') {
+            showScreen('screen-admin');
+            await loadManageUsersList();
+          } else {
+            showScreen('screen-user');
+          }
+          showToast(`Logged in as ${id}`);
         } else {
-          showScreen('screen-user');
+          showToast('Invalid ID or Password!');
         }
-        showToast(`Logged in as ${id}`);
-      } else {
-        showToast('Invalid ID or Password!');
+      } catch (err) {
+         showToast('Error logging in. Check connection.');
+         console.error(err);
       }
     }
   });
+
+  // --- Admin User Management Events ---
+  const formAddUser = document.getElementById('form-add-user');
+  if (formAddUser) {
+    formAddUser.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const newId = document.getElementById('new-user-id').value.trim().toLowerCase();
+      const newPass = document.getElementById('new-user-pass').value.trim();
+      const role = document.getElementById('new-user-role').value;
+
+      if (!newId || !newPass) return;
+
+      try {
+        await db.collection('appUsers').doc(newId).set({
+          pass: newPass,
+          role: role
+        });
+        showToast('User saved successfully');
+        document.getElementById('new-user-id').value = '';
+        document.getElementById('new-user-pass').value = '';
+        await loadManageUsersList();
+      } catch (err) {
+        showToast('Error saving user');
+        console.error(err);
+      }
+    });
+  }
+
+  async function loadManageUsersList() {
+    const listEl = document.getElementById('users-list');
+    if (!listEl) return;
+    
+    listEl.innerHTML = '<p style="text-align:center;color:gray;font-size:14px;">Loading users...</p>';
+    
+    try {
+      const snap = await db.collection('appUsers').get();
+      listEl.innerHTML = '';
+      
+      let usersHTML = '';
+      snap.forEach(doc => {
+        const u = doc.data();
+        const uid = doc.id;
+        usersHTML += `
+          <div class="list-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee;">
+            <div>
+              <div class="item-primary">${uid} <span class="badge" style="font-size: 10px; background: ${u.role==='admin'?'#E64A19':'#1976D2'};">${u.role.toUpperCase()}</span></div>
+              <div class="item-secondary">Password: ${uid === 'pramit' ? '********' : u.pass}</div>
+            </div>
+            <div>
+              ${uid !== 'pramit' ? `<button class="icon-btn delete-user-btn" data-uid="${uid}" style="color: #D32F2F;"><i class="material-icons">delete</i></button>` : '<span style="color:gray; font-size:12px;">Protected</span>'}
+            </div>
+          </div>
+        `;
+      });
+      listEl.innerHTML = usersHTML;
+
+      // Attach delete listeners
+      const deleteBtns = listEl.querySelectorAll('.delete-user-btn');
+      deleteBtns.forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const uid = e.currentTarget.getAttribute('data-uid');
+          if (uid === 'pramit') return; // Double protection
+          if (confirm(`Are you sure you want to delete user: ${uid}?`)) {
+            try {
+              await db.collection('appUsers').doc(uid).delete();
+              showToast('User deleted');
+              await loadManageUsersList();
+            } catch (err) {
+              showToast('Error deleting user');
+            }
+          }
+        });
+      });
+
+    } catch (err) {
+      listEl.innerHTML = '<p style="text-align:center;color:#D32F2F;font-size:14px;">Failed to load users</p>';
+      console.error(err);
+    }
+  }
 
   // -- Admin Events --
   const fileUpload = document.getElementById('file-upload');
